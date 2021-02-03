@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+  <head>
+	<meta name="viewport" id="vp" content="initial-scale=1.0,user-scalable=no,maximum-scale=1,width=device-width" />
+
+	<link rel="stylesheet" href="https://api.mazemap.com/js/v2.0.24/mazemap.min.css">
+	<script type='text/javascript' src='https://api.mazemap.com/js/v2.0.24/mazemap.min.js'></script>
+
+	<style>
+		body { margin:0px; padding:0px; width: 100%; height:100%; font: 12px/20px 'Helvetica Neue', Arial, Helvetica, sans-serif }
+		#controls{
+			position: absolute;
+			box-sizing: border-box;
+			padding: 10px;
+			top: 10px;
+			left: 60px;
+			width: auto;
+			height: auto;
+			right: 60px;
+			display: flex;
+		}
+		#controls button{
+			margin-top: 0px;
+			background-color: rgb(31, 31, 252);
+			padding: 0px 10px;
+			border-radius: 4px;
+			color: rgb(255, 255, 255);
+			width: auto;
+			border: 0;
+			flex-grow: 1;
+			margin: 0px 10px;
+		}
+	</style>
+</head>
+<body>
+	<div id="map" class="mazemap"></div>
+	<div id="controls" class="mapboxgl-ctrl-group">
+	<button onClick="setRoute(start1, dest1)">Road to Elevator</button>
+	<button onClick="setRoute(start2, dest2)">Entrance to Information Desk</button>
+	<button onClick="setRoute(start1, dest3)">Road to Imaging Centre</button>
+        <button onClick="setRoute(start3, dest4)">Information Desk to Imaging Centre</button><br>
+        <button onClick="changeColor()">Change color</button>
+    <button onClick="toggleOutline()">Toggle outline</button>
+    <button onClick="toggleFill()">Toggle fill</button>
+	</div>
+	<script>
+
+		var myMap = new Mazemap.Map({
+			// container id specified in the HTML
+			container: 'map',
+			campuses: 50,
+			center: {lng: -78.49914399674574, lat: 38.03118711249593},
+			zoom: 20.2,
+			zLevel: 1,
+			scrollZoom: true,
+			doubleClickZoom: false,
+			touchZoomRotate: false
+		});
+
+		// Some hardcoded route example start and destinations
+		var start1 = { lngLat: {lng: -78.50003778139148, lat: 38.03098667324329}, zLevel: 0};
+		var start2 = { poiId: 194915 };
+		var dest1 = { lngLat: {lng: -78.49930864263719, lat: 38.03118822249425}, zLevel: 2};
+		var dest2 = { poiId: 195096 };
+		var dest3 = { poiId: 195118};
+        var start3 = {poiId: 195096};
+        var dest4 = {poiId: 195118};
+
+
+		var routeController;
+
+		myMap.on('load', function(){
+            myMap.on('click', onMapClick);
+
+            // Initialize a Highlighter for POIs
+            // Storing the object on the map just makes it easy to access for other things
+            myMap.highlighter = new Mazemap.Highlighter( myMap, {
+                showOutline: true, // optional
+                showFill: true, // optional
+                outlineColor: Mazemap.Util.Colors.MazeColors.MazeBlue, // optional
+                fillColor: Mazemap.Util.Colors.MazeColors.MazeBlue  // optional
+            } );
+
+            // Trigger a manual 'click' on this lngLat just to highlight something initially
+            onMapClick({lngLat: {lng: 151.77132658935858, lat: -32.927328449531224}});
+
+			routeController = new Mazemap.RouteController(myMap, {
+				routeLineColorPrimary: 'rgba(0, 18, 234, 0.82)',
+				routeLineColorSecondary: '#79c6d4'
+			});
+			setRoute(start1, dest1);
+            var lngLat = myMap.getCenter();
+
+		});
+
+		function setRoute( start, dest ){
+			routeController.clear();
+
+			Mazemap.Data.getRouteJSON(start, dest)
+			.then(function(geojson){
+				console.log('@ geojson', geojson);
+				routeController.setPath(geojson);
+				var bounds = Mazemap.Util.Turf.bbox(geojson);
+				myMap.fitBounds( bounds, {padding: 100} );
+			});
+		}
+        var mazeMarker;
+
+        function onMapClick(e){
+
+            // un-highlight any already highlighted rooms
+            myMap.highlighter.clear();
+
+            var lngLat = e.lngLat;
+            var zLevel = myMap.zLevel;
+
+            // Fetching via Data API
+            // NB: Adding optional campusId parameter, makes lookup much faster, but can be omitted
+            Mazemap.Data.getPoiAt(lngLat, zLevel).then( poi => {
+                // Run custom highlight function
+                highlightRoom(poi);
+
+            }).catch( function(){ return false; } );
+        }
+
+        function highlightRoom(poi){
+            var lngLat = Mazemap.Util.getPoiLngLat(poi);
+
+            // If the POI has a polygon, use the default 'highlight' function to draw a marked outline around the POI.
+            if(poi.geometry.type === "Polygon"){
+                myMap.highlighter.highlight(poi);
+            }
+            myMap.flyTo({center: lngLat, speed: 0.5});
+        }
+
+        // global lastColor;
+        var lastColor = "#FF7B00";
+
+        function randomColor( excludeColor ){
+            var colors = ["#FF7B00", "#FF37A9", "#219CC4", "#66DC7A", "#B953FC", "#1FAFFC", "#CC14DE"];
+            var random = Math.round( Math.random() * 6 );
+            if(colors[random] === excludeColor){
+                return randomColor( excludeColor );
+            }
+
+            return colors[random];
+        }
+
+        function changeColor(){
+            //myMap.setLayer('mm-feature-highlight', filter);
+            lastColor = randomColor( lastColor );
+            myMap.highlighter.setFillStyle({'fill-color': lastColor});
+            myMap.highlighter.setOutlineStyle({'line-color': lastColor});
+        }
+
+        function toggleFill(){
+            var layer = myMap.highlighter.getFillLayer();
+            var visible = layer.getLayoutProperty('visibility') == "none";
+            if( visible ){
+                myMap.highlighter.showFill();
+            }else{
+                myMap.highlighter.hideFill();
+            }
+        }
+        function toggleOutline(){
+            var layer = myMap.highlighter.getOutlineLayer();
+            var visible = layer.getLayoutProperty('visibility') == "none";
+            if( visible ){
+                myMap.highlighter.showOutline();
+            }else{
+                myMap.highlighter.hideOutline();
+            }
+        }
+
+	</script>
+</body>
+</html>
